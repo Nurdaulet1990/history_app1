@@ -96,6 +96,7 @@ flutter:
 
   assets:
     - assets/icon/
+    - shorebird.yaml
 
 flutter_icons:
   android: true
