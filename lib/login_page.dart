@@ -23,12 +23,12 @@ class _LoginPageState extends State<LoginPage> {
         Navigator.pushReplacementNamed(context, '/main');
       } else {
         setState(() {
-          errorMessage = '用户名或密码错误';
+          errorMessage = 'Электрондық пошта немесе құпия сөз қате';
         });
       }
     } catch (e) {
       setState(() {
-        errorMessage = '用户名或密码错误';
+        errorMessage = 'Электрондық пошта немесе құпия сөз қате';
       });
     }
   }
@@ -36,30 +36,64 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.all(32.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: emailController,
-              decoration: InputDecoration(labelText: '邮箱'),
-            ),
-            TextField(
-              controller: passwordController,
-              decoration: InputDecoration(labelText: '密码'),
-              obscureText: true,
-            ),
-            if (errorMessage != null) ...[
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Кіру',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 32),
+              TextField(
+                controller: emailController,
+                decoration: InputDecoration(
+                  labelText: 'Электрондық пошта',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.email),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
               SizedBox(height: 16),
-              Text(errorMessage!, style: TextStyle(color: Colors.red)),
+              TextField(
+                controller: passwordController,
+                decoration: InputDecoration(
+                  labelText: 'Құпия сөз',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock),
+                ),
+                obscureText: true,
+              ),
+              if (errorMessage != null) ...[
+                SizedBox(height: 16),
+                Text(
+                  errorMessage!,
+                  style: TextStyle(color: Colors.red),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _login,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  textStyle: const TextStyle(fontSize: 18),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text('Кіру'),
+              ),
             ],
-            SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _login,
-              child: Text('登录'),
-            ),
-          ],
+          ),
         ),
       ),
     );
