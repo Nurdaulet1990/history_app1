@@ -5,18 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'question_banks.dart';
 import 'main_page.dart';
+import 'login_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Enable edge-to-edge display for Flutter
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  // Set system UI overlay style to ensure visibility of status bar icons
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    systemNavigationBarColor: Colors.transparent,
-  ));
-  
+  await Supabase.initialize(
+    url: '你的 Supabase Project URL',
+    anonKey: '你的 Supabase anon key',
+  );
   runApp(const MyApp());
 }
 
@@ -47,7 +44,11 @@ class MyApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: Colors.white,
       ),
-      home: const MainPage(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => LoginPage(),
+        '/main': (context) => MainPage(),
+      },
     );
   }
 }
@@ -83,12 +84,24 @@ class QuestionResponse {
   
   // Helper method to determine which category a question belongs to based on its ID
   static String getCategoryNameFromQuestionId(int questionId) {
-    if (questionId >= 1000 && questionId < 2000) return 'Бірінші тарау';
-    if (questionId >= 2000 && questionId < 3000) return 'Екінші тарау';
-    if (questionId >= 3000 && questionId < 4000) return 'Үшінші тарау';
-    if (questionId >= 4000 && questionId < 5000) return 'Төртінші тарау';
-    if (questionId >= 5000 && questionId < 6000) return 'Бесінші тарау';
-    if (questionId >= 6000 && questionId < 7000) return 'Алтыншы тарау';
+    // History questions
+    if (questionId >= 1000 && questionId < 2000) return 'Бірінші тарау (Тарих)';
+    if (questionId >= 2000 && questionId < 3000) return 'Екінші тарау (Тарих)';
+    if (questionId >= 3000 && questionId < 4000) return 'Үшінші тарау (Тарих)';
+    if (questionId >= 4000 && questionId < 5000) return 'Төртінші тарау (Тарих)';
+    if (questionId >= 5000 && questionId < 6000) return 'Бесінші тарау (Тарих)';
+    if (questionId >= 6000 && questionId < 7000) return 'Алтыншы тарау (Тарих)';
+    
+    // Biology questions
+    if (questionId >= 201000 && questionId < 202000) return 'Бірінші тарау (Биология)';
+    if (questionId >= 202000 && questionId < 203000) return 'Екінші тарау (Биология)';
+    if (questionId >= 203000 && questionId < 204000) return 'Үшінші тарау (Биология)';
+    if (questionId >= 204000 && questionId < 205000) return 'Төртінші тарау (Биология)';
+    
+    // Computer Science questions
+    if (questionId >= 101000 && questionId < 102000) return 'Алгоритмдер негіздері';
+    if (questionId >= 102000 && questionId < 103000) return 'Деректер құрылымдары';
+    
     return 'Белгісіз';
   }
 }
@@ -99,6 +112,7 @@ class TestResult {
   final int totalQuestions;
   final double percentage;
   final String grade;
+  final String subject; // Added subject field
   
   TestResult({
     required this.date,
@@ -106,6 +120,7 @@ class TestResult {
     required this.totalQuestions,
     required this.percentage,
     required this.grade,
+    required this.subject, // Added to constructor
   });
   
   // Convert TestResult to JSON
@@ -116,6 +131,7 @@ class TestResult {
       'totalQuestions': totalQuestions,
       'percentage': percentage,
       'grade': grade,
+      'subject': subject, // Added to JSON
     };
   }
   
@@ -127,6 +143,7 @@ class TestResult {
       totalQuestions: json['totalQuestions'],
       percentage: json['percentage'],
       grade: json['grade'],
+      subject: json['subject'] ?? 'Unknown', // Default if missing in old data
     );
   }
   
@@ -134,33 +151,47 @@ class TestResult {
   static Future<void> saveTestResult(TestResult result) async {
     final prefs = await SharedPreferences.getInstance();
     
-    // Get existing results
-    List<TestResult> existingResults = await loadTestResults();
+    // Get existing results for this subject
+    List<TestResult> existingResults = await loadTestResults(subject: result.subject);
     
     // Add the new result
     existingResults.add(result);
     
-    // Keep only the last 10 results
+    // Keep only the last 10 results for this subject
     if (existingResults.length > 10) {
       existingResults = existingResults.sublist(existingResults.length - 10);
     }
     
     // Convert to JSON and save
     final List<String> jsonResults = existingResults.map((result) => jsonEncode(result.toJson())).toList();
-    await prefs.setStringList('test_results', jsonResults);
+    await prefs.setStringList('test_results_${result.subject}', jsonResults);
   }
   
   // Load test results from SharedPreferences
-  static Future<List<TestResult>> loadTestResults() async {
+  static Future<List<TestResult>> loadTestResults({String? subject}) async {
     final prefs = await SharedPreferences.getInstance();
-    final List<String>? jsonResults = prefs.getStringList('test_results');
     
-    if (jsonResults == null || jsonResults.isEmpty) {
-      return [];
+    if (subject != null) {
+      // Load results for a specific subject
+      final List<String>? jsonResults = prefs.getStringList('test_results_$subject');
+      
+      if (jsonResults == null || jsonResults.isEmpty) {
+        return [];
+      }
+      
+      // Convert JSON to TestResult objects
+      return jsonResults.map((jsonResult) => TestResult.fromJson(jsonDecode(jsonResult))).toList();
+    } else {
+      // For backward compatibility, also check the old key
+      final List<String>? jsonResults = prefs.getStringList('test_results');
+      
+      if (jsonResults == null || jsonResults.isEmpty) {
+        return [];
+      }
+      
+      // Convert JSON to TestResult objects
+      return jsonResults.map((jsonResult) => TestResult.fromJson(jsonDecode(jsonResult))).toList();
     }
-    
-    // Convert JSON to TestResult objects
-    return jsonResults.map((jsonResult) => TestResult.fromJson(jsonDecode(jsonResult))).toList();
   }
 }
 
@@ -328,13 +359,13 @@ class _LearningPathPageState extends State<LearningPathPage> {
   Future<void> _loadCategories() async {
     // Initialize with default categories
     categories = [
-      Category(name: 'Бірінші тарау', displayName: 'Ежелгі Қазақстан', id: 1, isLocked: false, completedLevels: 0),
-      Category(name: 'Екінші тарау', displayName: 'Орта ғасыр', id: 2, isLocked: false, completedLevels: 0),
-      Category(name: 'Үшінші тарау', displayName: 'Жаңа замандағы Қазақстан 1', id: 3, isLocked: false, completedLevels: 0),
-      Category(name: 'Төртінші тарау', displayName: 'Жаңа замандағы Қазақстан 2', id: 4, isLocked: false, completedLevels: 0),
-      Category(name: 'Бесінші тарау', displayName: 'Қазіргі замандағы Қазақстан 1', id: 5, isLocked: false, completedLevels: 0),
-      Category(name: 'Алтыншы тарау', displayName: 'Қазіргі замандағы Қазақстан 2', id: 6, isLocked: false, completedLevels: 0),
-      Category(name: 'Жалпы жаттығу', id: 9, isLocked: false, completedLevels: 0),
+      Category(name: 'Бірінші тарау (Тарих)', displayName: 'Ежелгі Қазақстан', id: 1, isLocked: false, completedLevels: 0),
+      Category(name: 'Екінші тарау (Тарих)', displayName: 'Орта ғасыр', id: 2, isLocked: false, completedLevels: 0),
+      Category(name: 'Үшінші тарау (Тарих)', displayName: 'Жаңа замандағы Қазақстан 1', id: 3, isLocked: false, completedLevels: 0),
+      Category(name: 'Төртінші тарау (Тарих)', displayName: 'Жаңа замандағы Қазақстан 2', id: 4, isLocked: false, completedLevels: 0),
+      Category(name: 'Бесінші тарау (Тарих)', displayName: 'Қазіргі замандағы Қазақстан 1', id: 5, isLocked: false, completedLevels: 0),
+      Category(name: 'Алтыншы тарау (Тарих)', displayName: 'Қазіргі замандағы Қазақстан 2', id: 6, isLocked: false, completedLevels: 0),
+      Category(name: 'Жалпы жаттығу (Тарих)', id: 9, isLocked: false, completedLevels: 0),
       Category(name: 'Сынақ алаңы', displayName: 'Сынақ алаңы', id: 10, isLocked: false, completedLevels: 0, totalLevels: 1),
     ];
 
@@ -365,7 +396,7 @@ class _LearningPathPageState extends State<LearningPathPage> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Қазақстан тарихы'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withOpacity(0.95),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withAlpha((0.95 * 255).round()),
         elevation: 0,
         systemOverlayStyle: const SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
@@ -406,94 +437,99 @@ class _LearningPathPageState extends State<LearningPathPage> {
           context: context,
           removeTop: true, // Remove top padding since AppBar already handles it
           child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Theme.of(context).colorScheme.primary.withAlpha((0.7 * 255).round()),
-                          Theme.of(context).colorScheme.secondary.withAlpha((0.7 * 255).round()),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withAlpha((0.1 * 255).round()),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 420),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Theme.of(context).colorScheme.primary.withAlpha((0.7 * 255).round()),
+                              Theme.of(context).colorScheme.secondary.withAlpha((0.7 * 255).round()),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withAlpha((0.1 * 255).round()),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        child: Column(
                           children: [
-                            const Text(
-                              'Жалпы прогресс',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Жалпы прогресс',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                Text(
+                                  '${(totalProgress * 100).toStringAsFixed(1)}%',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              width: double.infinity,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                color: Colors.white.withAlpha((0.2 * 255).round()),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: LinearProgressIndicator(
+                                  value: totalProgress,
+                                  backgroundColor: Colors.transparent,
+                                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                  minHeight: 16,
+                                ),
                               ),
                             ),
+                            const SizedBox(height: 4),
                             Text(
-                              '${(totalProgress * 100).toStringAsFixed(1)}%',
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                              '${categories.fold(0, (sum, c) => sum + c.completedLevels)}/${categories.fold(0, (sum, c) => sum + c.totalLevels)} деңгей',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withAlpha((0.9 * 255).round()),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            color: Colors.white.withAlpha((0.2 * 255).round()),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: LinearProgressIndicator(
-                              value: totalProgress,
-                              backgroundColor: Colors.transparent,
-                              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-                              minHeight: 16,
-                            ),
-                          ),
+                      ),
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Оқу үрдісі',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${categories.fold(0, (sum, c) => sum + c.completedLevels)}/${categories.fold(0, (sum, c) => sum + c.totalLevels)} деңгей',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withAlpha((0.9 * 255).round()),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 20),
+                      LearningPathGrid(categories: categories),
+                    ],
                   ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Оқу үрдісі',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  LearningPathGrid(categories: categories),
-                ],
+                ),
               ),
             ),
           ),
@@ -542,10 +578,10 @@ class CategoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // Change all card colors to transparent dark blue with increased transparency
     List<Color> cardGradientColors = category.isLocked
-        ? [Colors.blueGrey.shade700.withOpacity(0.5), Colors.blueGrey.shade900.withOpacity(0.6)]
+        ? [Colors.blueGrey.shade700.withAlpha((0.5 * 255).round()), Colors.blueGrey.shade900.withAlpha((0.6 * 255).round())]
         : [
-            Colors.blue.shade800.withOpacity(0.5),
-            Colors.blue.shade900.withOpacity(0.6),
+            Colors.blue.shade800.withAlpha((0.5 * 255).round()),
+            Colors.blue.shade900.withAlpha((0.6 * 255).round()),
           ];
 
     return GestureDetector(
@@ -560,11 +596,17 @@ class CategoryCard extends StatelessWidget {
           : () {
               // For special categories, go directly to the questions instead of level selection
               if (category.name == 'Сынақ алаңы') {
+                print('Opening test area with category ID: ${category.id}'); // Add debug print
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => QuizPage(
-                      level: category.levels[0], // Just use the first level
+                      level: Level(
+                        name: 'Сынақ алаңы',
+                        id: category.id,
+                        isLocked: false,
+                        description: 'Тест режимі'
+                      ),
                       category: category,
                     ),
                   ),
@@ -603,7 +645,7 @@ class CategoryCard extends StatelessWidget {
                 right: 8,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.blue.shade300.withOpacity(0.8),
+                    color: Colors.blue.shade300.withAlpha((0.8 * 255).round()),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
@@ -628,7 +670,7 @@ class CategoryCard extends StatelessWidget {
                 left: 8,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.blue.shade300.withOpacity(0.4),
+                    color: Colors.blue.shade300.withAlpha((0.4 * 255).round()),
                     shape: BoxShape.circle,
                   ),
                   padding: const EdgeInsets.all(8),
@@ -643,69 +685,77 @@ class CategoryCard extends StatelessWidget {
               padding: const EdgeInsets.all(16.0),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (category.isLocked)
-                        const Icon(
-                          Icons.lock,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      const SizedBox(height: 8),
-                      Text(
-                        category.displayName,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: category.isLocked ? Colors.grey.shade700 : Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (!category.isLocked) ...[
-                        category.name == 'Сынақ алаңы'
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(12),
+                  double contentMaxWidth = constraints.maxWidth < 600 ? constraints.maxWidth : 600;
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: contentMaxWidth),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (category.isLocked)
+                              const Icon(
+                                Icons.lock,
+                                color: Colors.white,
+                                size: 32,
                               ),
-                              child: const Text(
-                                'Білім тексеру',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            )
-                          : ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: LinearProgressIndicator(
-                                value: category.progress,
-                                backgroundColor: Colors.white.withAlpha((0.2 * 255).round()),
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  category.hasCompletionBadge ? Colors.blue.shade300 : Colors.white,
-                                ),
-                                minHeight: 8,
+                            const SizedBox(height: 8),
+                            Text(
+                              category.displayName,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: category.isLocked ? Colors.grey.shade700 : Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                        const SizedBox(height: 8),
-                        category.name != 'Сынақ алаңы'
-                          ? Text(
-                              '${category.completedLevels}/${category.totalLevels} деңгей',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                      ],
-                    ],
+                            const SizedBox(height: 12),
+                            if (!category.isLocked) ...[
+                              category.name == 'Сынақ алаңы'
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha((0.2 * 255).round()),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Text(
+                                      'Білім тексеру',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  )
+                                : ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: LinearProgressIndicator(
+                                      value: category.progress,
+                                      backgroundColor: Colors.white.withAlpha((0.2 * 255).round()),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        category.hasCompletionBadge ? Colors.blue.shade300 : Colors.white,
+                                      ),
+                                      minHeight: 8,
+                                    ),
+                                  ),
+                              const SizedBox(height: 8),
+                              category.name != 'Сынақ алаңы'
+                                ? Text(
+                                    '${category.completedLevels}/${category.totalLevels} деңгей',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
                   );
                 }
               ),
@@ -753,7 +803,7 @@ class _CategoryLevelsPageState extends State<CategoryLevelsPage> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(category.name),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withOpacity(0.95),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withAlpha((0.95 * 255).round()),
         elevation: 0,
         systemOverlayStyle: const SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
@@ -766,80 +816,85 @@ class _CategoryLevelsPageState extends State<CategoryLevelsPage> {
           context: context,
           removeTop: true, // Remove top padding since AppBar already handles it
           child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Прогресс: ${category.completedLevels}/${category.totalLevels}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final double buttonSize = 80.0; // Increased size for the yurt shape
-                      final double topPadding = 20.0;
-                      final double bottomPadding = 20.0;
-                      final double verticalSpacing = 60.0; // Increased spacing
-                      
-                      final double totalHeight = topPadding + bottomPadding + 
-                        (buttonSize * category.levels.length) + 
-                        (verticalSpacing * (category.levels.length - 1));
-
-                      return SizedBox(
-                        height: totalHeight,
-                        child: Stack(
-                          children: [
-                            CustomPaint(
-                              size: Size(constraints.maxWidth, totalHeight),
-                              painter: CurvedLinePainter(
-                                levels: category.levels,
-                                buttonSize: buttonSize,
-                                verticalSpacing: verticalSpacing,
-                                topPadding: topPadding,
-                                width: constraints.maxWidth,
-                              ),
-                            ),
-                            ...List.generate(
-                              category.levels.length,
-                              (index) {
-                                final level = category.levels[index];
-                                final y = topPadding + (index * (buttonSize + verticalSpacing));
-                                
-                                // Calculate x position with alternating curves
-                                final amplitude = constraints.maxWidth * 0.4; // Reduced amplitude
-                                final frequency = 2 * pi / 6;
-                                final phase = index * frequency;
-                                final x = constraints.maxWidth / 2 + amplitude * sin(phase);
-
-                                return Positioned(
-                                  top: y,
-                                  left: x - buttonSize / 2,
-                                  child: SizedBox(
-                                    width: buttonSize,
-                                    height: buttonSize,
-                                    child: Transform.scale(
-                                      scale: level.isLocked ? 0.85 : 1.0,
-                                      child: LevelButton(
-                                        level: level,
-                                        category: category,
-                                        onLevelComplete: _refreshProgress,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 420),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Прогресс: ${category.completedLevels}/${category.totalLevels}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
-                      );
-                    },
+                      ),
+                      const SizedBox(height: 20),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final double buttonSize = 80.0; // Increased size for the yurt shape
+                          final double topPadding = 20.0;
+                          final double bottomPadding = 20.0;
+                          final double verticalSpacing = 60.0; // Increased spacing
+                          
+                          final double totalHeight = topPadding + bottomPadding + 
+                            (buttonSize * category.levels.length) + 
+                            (verticalSpacing * (category.levels.length - 1));
+
+                          return SizedBox(
+                            height: totalHeight,
+                            child: Stack(
+                              children: [
+                                CustomPaint(
+                                  size: Size(constraints.maxWidth, totalHeight),
+                                  painter: CurvedLinePainter(
+                                    levels: category.levels,
+                                    buttonSize: buttonSize,
+                                    verticalSpacing: verticalSpacing,
+                                    topPadding: topPadding,
+                                    width: constraints.maxWidth,
+                                  ),
+                                ),
+                                ...List.generate(
+                                  category.levels.length,
+                                  (index) {
+                                    final level = category.levels[index];
+                                    final y = topPadding + (index * (buttonSize + verticalSpacing));
+                                    
+                                    // Calculate x position with alternating curves
+                                    final amplitude = constraints.maxWidth * 0.4; // Reduced amplitude
+                                    final frequency = 2 * pi / 6;
+                                    final phase = index * frequency;
+                                    final x = constraints.maxWidth / 2 + amplitude * sin(phase);
+
+                                    return Positioned(
+                                      top: y,
+                                      left: x - buttonSize / 2,
+                                      child: SizedBox(
+                                        width: buttonSize,
+                                        height: buttonSize,
+                                        child: Transform.scale(
+                                          scale: level.isLocked ? 0.85 : 1.0,
+                                          child: LevelButton(
+                                            level: level,
+                                            category: category,
+                                            onLevelComplete: _refreshProgress,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -1085,7 +1140,7 @@ class YurtPainter extends CustomPainter {
     );
     
     final environmentShadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.35)
+      ..color = Colors.black.withAlpha((0.35 * 255).round())
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
     
     canvas.drawPath(environmentShadowPath, environmentShadowPaint);
@@ -1127,8 +1182,8 @@ class YurtPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.5
         ..color = isCompleted 
-            ? Colors.green.shade400.withOpacity(0.3)
-            : Colors.brown.shade300.withOpacity(0.3);
+            ? Colors.green.shade400.withAlpha((0.3 * 255).round())
+            : Colors.brown.shade300.withAlpha((0.3 * 255).round());
       
       // Subtle grass/terrain pattern
       for (int i = 0; i < 8; i++) {
@@ -1178,8 +1233,8 @@ class YurtPainter extends CustomPainter {
     
     // Enhanced drop shadow for the roof with more depth
     final roofShadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.5)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+      ..color = Colors.black.withAlpha((0.6 * 255).round())
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
     
     final roofShadowPath = Path()..addPath(roofPath, const Offset(6, 6));
     canvas.drawPath(roofShadowPath, roofShadowPaint);
@@ -1206,7 +1261,7 @@ class YurtPainter extends CustomPainter {
       final feltTexturePaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.4
-        ..color = Colors.brown.shade200.withOpacity(0.3);
+        ..color = Colors.brown.shade200.withAlpha((0.3 * 255).round());
       
       // Create a more subtle felt texture pattern
       for (int i = 0; i < 20; i++) {
@@ -1224,7 +1279,7 @@ class YurtPainter extends CustomPainter {
       // Horizontal rings on the roof (enhanced with better perspective)
       final roofLinePaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = Colors.brown.shade300.withOpacity(0.7)
+        ..color = Colors.brown.shade300.withAlpha((0.7 * 255).round())
         ..strokeWidth = 1.0;
       
       for (int i = 1; i <= 7; i++) {
@@ -1245,7 +1300,7 @@ class YurtPainter extends CustomPainter {
       // Enhanced diagonal supports (uyk) with varying thickness
       final uykPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = Colors.brown.shade400.withOpacity(0.8);
+        ..color = Colors.brown.shade400.withAlpha((0.8 * 255).round());
       
       for (int i = 0; i < 12; i++) {
         final angle = (i * pi / 6);
@@ -1314,7 +1369,7 @@ class YurtPainter extends CustomPainter {
     
     // Enhanced body shadow with realistic light direction
     final bodyShadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.45)
+      ..color = Colors.black.withAlpha((0.45 * 255).round())
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
     
     final bodyShadowPath = Path()..addPath(bodyPath, const Offset(5, 5));
@@ -1341,7 +1396,7 @@ class YurtPainter extends CustomPainter {
       final wallTexturePaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.5
-        ..color = Colors.brown.shade700.withOpacity(0.2);
+        ..color = Colors.brown.shade700.withAlpha((0.2 * 255).round());
       
       // Horizontal texture lines
       for (int i = 1; i < 8; i++) {
@@ -1365,7 +1420,7 @@ class YurtPainter extends CustomPainter {
         final ropePaint = Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 0.8
-          ..color = Color(0xFF5C4033).withOpacity(0.4); // Brown rope
+          ..color = Color(0xFF5C4033).withAlpha((0.4 * 255).round()); // Brown rope
         
         canvas.drawLine(
           Offset(x, roofBaseY),
@@ -1385,8 +1440,8 @@ class YurtPainter extends CustomPainter {
         ..style = PaintingStyle.fill
         ..shader = LinearGradient(
           colors: [
-              Color(0xFFD22730).withOpacity(0.85), // Traditional Kazakh red
-              Color(0xFFAA1428).withOpacity(0.85), // Deeper red
+              Color(0xFFD22730).withAlpha((0.85 * 255).round()), // Traditional Kazakh red
+              Color(0xFFAA1428).withAlpha((0.85 * 255).round()), // Deeper red
             ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -1419,7 +1474,7 @@ class YurtPainter extends CustomPainter {
       // Enhanced traditional Kazakh pattern on the band - more authentic patterns
       final patternPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = Colors.white.withOpacity(0.85)
+        ..color = Colors.white.withAlpha((0.85 * 255).round())
         ..strokeWidth = 1.2;
       
       // Kazakh "qoshqar muiz" (ram's horn) pattern - a common traditional motif
@@ -1470,8 +1525,8 @@ class YurtPainter extends CustomPainter {
         final dotPaint = Paint()
           ..style = PaintingStyle.fill
           ..color = isCompleted 
-              ? Colors.green.shade100.withOpacity(0.9)
-              : Colors.white.withOpacity(0.9);
+              ? Colors.green.shade100.withAlpha((0.9 * 255).round())
+              : Colors.white.withAlpha((0.9 * 255).round());
         
         canvas.drawCircle(Offset(patternX, patternY), 1.2, dotPaint);
         canvas.drawCircle(Offset(patternX + patternSize / 3, patternY), 0.8, dotPaint);
@@ -1481,7 +1536,7 @@ class YurtPainter extends CustomPainter {
       // Add border lines to the band
       final borderPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = Colors.white.withOpacity(0.6)
+        ..color = Colors.white.withAlpha((0.6 * 255).round())
         ..strokeWidth = 1.0;
       
       final topBorderPath = Path();
@@ -1525,7 +1580,7 @@ class YurtPainter extends CustomPainter {
     // Enhanced door with deeper shadow for more 3D effect
     final doorShadowPath = Path()..addPath(doorPath, const Offset(3, 3));
     final doorShadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.6)
+      ..color = Colors.black.withAlpha((0.6 * 255).round())
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
     
     canvas.drawPath(doorShadowPath, doorShadowPaint);
@@ -1561,7 +1616,7 @@ class YurtPainter extends CustomPainter {
       // Door with woodgrain texture
       final woodgrainPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = Color(0xFFA67B5B).withOpacity(0.3) // Wood color
+        ..color = Color(0xFFA67B5B).withAlpha((0.3 * 255).round()) // Wood color
         ..strokeWidth = 0.6;
       
       // Vertical wood grain
@@ -1579,7 +1634,7 @@ class YurtPainter extends CustomPainter {
       // Traditional Kazakh door decorations with more detail
       final doorPatternPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = Color(0xFFDAA520).withOpacity(0.8) // Gold color
+        ..color = Color(0xFFDAA520).withAlpha((0.8 * 255).round()) // Gold color
         ..strokeWidth = 1.2;
       
       // Door threshold line with slight curve for realism
@@ -1630,7 +1685,7 @@ class YurtPainter extends CustomPainter {
       // Decorative door handle/knocker
       final handlePaint = Paint()
         ..style = PaintingStyle.fill
-        ..color = Color(0xFFDAA520).withOpacity(0.9); // Gold
+        ..color = Color(0xFFDAA520).withAlpha((0.9 * 255).round()); // Gold
       
       canvas.drawCircle(
         Offset(middleX, doorCenterY + tulipSize * 0.6),
@@ -1649,7 +1704,7 @@ class YurtPainter extends CustomPainter {
     // Draw the shanyrak (the crown of the roof) with enhanced 3D effect
     final shanyraqShadowPaint = Paint()
       ..style = PaintingStyle.fill
-      ..color = Colors.black.withOpacity(0.6)
+      ..color = Colors.black.withAlpha((0.6 * 255).round())
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
     
     canvas.drawCircle(
@@ -1683,7 +1738,7 @@ class YurtPainter extends CustomPainter {
       ..shader = RadialGradient(
         colors: isLocked
           ? [Colors.grey.shade300, Colors.grey.shade500]
-          : [Color(0xFF87CEEB), Color(0xFF1E90FF).withOpacity(0.7)], // Sky blue gradient
+          : [Color(0xFF87CEEB), Color(0xFF1E90FF).withAlpha((0.7 * 255).round())], // Sky blue gradient
         radius: 0.7,
       ).createShader(Rect.fromCircle(
         center: Offset(width / 2, roofTopY),
@@ -1700,7 +1755,7 @@ class YurtPainter extends CustomPainter {
     if (!isLocked) {
       final crossPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..color = Color(0xFFD2B48C).withOpacity(0.8) // Tan wood color
+        ..color = Color(0xFFD2B48C).withAlpha((0.8 * 255).round()) // Tan wood color
         ..strokeWidth = 1.2;
       
       // Draw more detailed cross structure
@@ -1725,7 +1780,7 @@ class YurtPainter extends CustomPainter {
     // Top light reflection (simulating sunlight hitting the felt/roof)
     final highlightPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.white.withOpacity(0.5)
+      ..color = Colors.white.withAlpha((0.5 * 255).round())
       ..strokeWidth = 1.8;
     
     // Roof highlight enhanced to follow the curve of the roof
@@ -1749,7 +1804,7 @@ class YurtPainter extends CustomPainter {
     // Create a new Paint object for the body highlight with a different stroke width
     final bodyHighlightPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.white.withOpacity(0.5)
+      ..color = Colors.white.withAlpha((0.5 * 255).round())
       ..strokeWidth = 1.0;
     
     canvas.drawPath(bodyHighlightPath, bodyHighlightPaint);
@@ -1757,9 +1812,10 @@ class YurtPainter extends CustomPainter {
     // Add ambient occlusion (shadows where surfaces meet) for more realism
     final ambientOcclusionPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..color = Colors.black.withOpacity(0.3)
+      ..color = Colors.black.withAlpha((0.3 * 255).round())
       ..strokeWidth = 2.0
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    
     
     // Shadow where roof meets body
     canvas.drawLine(
@@ -1950,8 +2006,32 @@ class QuizManager {
 }
 
 // Replace the getMockQuestionsForCategory function with:
-List<Question> getMockQuestionsForCategory(String categoryName) {
-  print('Getting mock questions for category: $categoryName');
+List<Question> getMockQuestionsForCategory(String categoryName, {int? categoryId}) {
+  print('Getting mock questions for category: $categoryName, ID: ${categoryId ?? "Not provided"}');
+  
+  if (categoryName == 'Сынақ алаңы' && categoryId != null) {
+    print('Processing test area for category ID: $categoryId');
+    
+    // Create specific test area category name based on ID
+    String specificCategoryName = categoryName;
+    if (categoryId >= 200 && categoryId < 300) {
+      specificCategoryName = 'Сынақ алаңы (Биология)';
+      print('Using Biology test area');
+    } else if (categoryId >= 100 && categoryId < 200) {
+      specificCategoryName = 'Сынақ алаңы (Информатика)';
+      print('Using Computer Science test area');
+    } else {
+      specificCategoryName = 'Сынақ алаңы (Тарих)';
+      print('Using History test area');
+    }
+    
+    // Use specific category name that includes subject identifier
+    var questions = QuestionBank.getQuestionsForCategory(specificCategoryName);
+    print('Retrieved ${questions.length} questions for $specificCategoryName');
+    return questions;
+  }
+  
+  // For regular categories, use the standard approach
   var questions = QuestionBank.getQuestionsForCategory(categoryName);
   print('Retrieved ${questions.length} questions');
   return questions;
@@ -2006,7 +2086,15 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
   // Load test results from SharedPreferences
   Future<void> _loadTestResults() async {
     if (isMemoryTest) {
-      final results = await TestResult.loadTestResults();
+      // Determine the subject based on the category ID
+      String subject = "History";
+      if (widget.category.id >= 200 && widget.category.id < 300) {
+        subject = "Biology";
+      } else if (widget.category.id >= 100 && widget.category.id < 200) {
+        subject = "ComputerScience";
+      }
+      
+      final results = await TestResult.loadTestResults(subject: subject);
       setState(() {
         testResults = results;
         isLoadingResults = false;
@@ -2016,20 +2104,28 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
   
   // Build a section that displays the last 10 test results
   Widget _buildTestResultsSection() {
+    // Determine subject title based on category ID
+    String subjectTitle = "Тарих";
+    if (widget.category.id >= 200 && widget.category.id < 300) {
+      subjectTitle = "Биология";
+    } else if (widget.category.id >= 100 && widget.category.id < 200) {
+      subjectTitle = "Информатика";
+    }
+    
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16.0),
       child: Card(
         elevation: 4,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        color: Colors.blue.shade900.withOpacity(0.8),
+        color: Colors.blue.shade900.withAlpha((0.8 * 255).round()),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Соңғы 10 тест нәтижесі',
-                style: TextStyle(
+              Text(
+                'Соңғы 10 тест нәтижесі - $subjectTitle',
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -2163,7 +2259,7 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
             isMemoryTest ? 'Сынақ алаңы' : 
             'Деңгей ${widget.level.id}'
           ),
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary.withOpacity(0.95),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary.withAlpha((0.95 * 255).round()),
           elevation: 0,
           systemOverlayStyle: const SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
@@ -2183,6 +2279,9 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
       );
     }
 
+    // Get the category name for the current question
+    String categoryName = QuestionResponse.getCategoryNameFromQuestionId(currentQuestion.id);
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -2190,7 +2289,7 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
           isMemoryTest ? 'Сынақ алаңы' : 
           'Деңгей ${widget.level.id}'
         ),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withOpacity(0.95),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withAlpha((0.95 * 255).round()),
         elevation: 0,
         systemOverlayStyle: const SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
@@ -2225,6 +2324,40 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
+              // Display the image if available
+              if (currentQuestion.imageAsset != null) ...[
+                Container(
+                  height: 200,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Image.asset(
+                    currentQuestion.imageAsset!,
+                    height: 200,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      print('Error loading image: ${currentQuestion.imageAsset}');
+                      print('Error details: $error');
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error, color: Colors.red, size: 40),
+                          SizedBox(height: 8),
+                          Text('Image loading failed', style: TextStyle(color: Colors.red)),
+                          SizedBox(height: 4),
+                          Text('Path: ${currentQuestion.imageAsset}', 
+                            style: TextStyle(fontSize: 10),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
               ...List.generate(
                 currentQuestion.currentOptions.length,
                 (index) => Padding(
@@ -2371,6 +2504,14 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
                          percentage >= 60 ? 'C' : 
                          percentage >= 50 ? 'D' : 'F';
     
+    // Determine the subject based on the category ID
+    String subject = "History";
+    if (widget.category.id >= 200 && widget.category.id < 300) {
+      subject = "Biology";
+    } else if (widget.category.id >= 100 && widget.category.id < 200) {
+      subject = "ComputerScience";
+    }
+    
     // Save the test result
     final testResult = TestResult(
       date: DateTime.now(),
@@ -2378,6 +2519,7 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
       totalQuestions: totalAnswered,
       percentage: percentage,
       grade: grade,
+      subject: subject,
     );
     
     TestResult.saveTestResult(testResult);
@@ -2429,6 +2571,7 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
           responses: questionResponses,
           totalCorrect: correctAnswers,
           totalQuestions: totalAnswered,
+          categoryId: widget.category.id, // Pass the category ID
         ),
       ),
     ).then((_) => Navigator.pop(context)); // Return to category screen after review
@@ -2436,8 +2579,15 @@ class _QuizPageState extends State<QuizPage> with SingleTickerProviderStateMixin
 
   Future<void> _initializeQuiz() async {
     try {
+      // Debug: Print category information
+      print('Initializing quiz for category: ${widget.category.name}, ID: ${widget.category.id}');
+      print('Current context: ${widget.level.id}, IsBiologyTest: ${widget.category.id >= 200 && widget.category.id < 300}');
+      
       // Get questions for this category
-      final questions = getMockQuestionsForCategory(widget.category.name);
+      final questions = getMockQuestionsForCategory(widget.category.name, categoryId: widget.category.id);
+      
+      // Print debug info about the questions
+      print('Got ${questions.length} questions, first ID range: ${questions.isNotEmpty ? questions.first.id ~/ 1000 : "None"}');
       
       // For memory test, adjust the number of questions based on what's available
       if (isMemoryTest && questions.length > 0) {
@@ -2492,12 +2642,14 @@ class TestReviewScreen extends StatefulWidget {
   final List<QuestionResponse> responses;
   final int totalCorrect;
   final int totalQuestions;
+  final int categoryId; // Add categoryId to track which subject this is
 
   const TestReviewScreen({
     super.key,
     required this.responses,
     required this.totalCorrect, 
     required this.totalQuestions,
+    required this.categoryId, // Add to constructor
   });
 
   @override
@@ -2537,6 +2689,14 @@ class _TestReviewScreenState extends State<TestReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Determine subject title based on category ID
+    String subjectTitle = "Тарих";
+    if (widget.categoryId >= 200 && widget.categoryId < 300) {
+      subjectTitle = "Биология";
+    } else if (widget.categoryId >= 100 && widget.categoryId < 200) {
+      subjectTitle = "Информатика";
+    }
+    
     List<QuestionResponse> displayedResponses = [];
     
     if (selectedCategory != null) {
@@ -2553,8 +2713,8 @@ class _TestReviewScreenState extends State<TestReviewScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Тест нәтижелері'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withOpacity(0.95),
+        title: Text('$subjectTitle: Тест нәтижелері'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withAlpha((0.95 * 255).round()),
         elevation: 0,
         systemOverlayStyle: const SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
@@ -2682,8 +2842,60 @@ class _TestReviewScreenState extends State<TestReviewScreen> {
                                       ],
                                     ),
                                     const SizedBox(height: 8),
-                                    Text('Санат: ${response.categoryName}'),
+                                    // Hide category display
+                                    /*Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade50, 
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.blue.shade200),
+                                      ),
+                                      child: Text(
+                                        'Санат: ${response.categoryName}',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.blue.shade800,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),*/
                                     const SizedBox(height: 16),
+                                    // Display image if available
+                                    if (response.question.imageAsset != null) ...[
+                                      Center(
+                                        child: Container(
+                                          height: 180,
+                                          width: double.infinity,
+                                          decoration: BoxDecoration(
+                                            border: Border.all(color: Colors.grey.shade300),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Image.asset(
+                                            response.question.imageAsset!,
+                                            height: 180,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              print('Error loading image in review: ${response.question.imageAsset}');
+                                              print('Error details: $error');
+                                              return Column(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(Icons.error, color: Colors.red, size: 40),
+                                                  SizedBox(height: 8),
+                                                  Text('Image loading failed', style: TextStyle(color: Colors.red)),
+                                                  SizedBox(height: 4),
+                                                  Text('Path: ${response.question.imageAsset}', 
+                                                    style: TextStyle(fontSize: 10),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ],
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
                                     ...List.generate(
                                       response.question.options.length,
                                       (index) {
@@ -2736,6 +2948,434 @@ class _TestReviewScreenState extends State<TestReviewScreen> {
                       ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ComputerScienceLearningPathPage extends StatefulWidget {
+  const ComputerScienceLearningPathPage({super.key});
+
+  @override
+  State<ComputerScienceLearningPathPage> createState() => _ComputerScienceLearningPathPageState();
+}
+
+class _ComputerScienceLearningPathPageState extends State<ComputerScienceLearningPathPage> {
+  late List<Category> categories;
+  bool isLoading = true;
+
+  double get totalProgress {
+    if (categories.isEmpty) return 0.0;
+    double totalCompletedLevels = categories
+        .map((category) => category.completedLevels)
+        .fold(0, (sum, levels) => sum + levels);
+    
+    double totalPossibleLevels = categories
+        .map((category) => category.totalLevels)
+        .fold(0, (sum, levels) => sum + levels);
+    
+    return totalPossibleLevels > 0 ? (totalCompletedLevels / totalPossibleLevels) : 0.0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _clearAllCategoryData() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (int i = 101; i <= 110; i++) {
+      await prefs.remove('category_$i');
+    }
+    print('All Computer Science category data has been cleared');
+    await _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    // Initialize with default categories for Computer Science
+    categories = [
+      Category(name: 'Алгоритмдер негіздері', displayName: 'Алгоритмдер негіздері', id: 101, isLocked: false, completedLevels: 0),
+      Category(name: 'Деректер құрылымдары', displayName: 'Деректер құрылымдары', id: 102, isLocked: false, completedLevels: 0),
+      Category(name: 'Үшінші тарау', displayName: 'Бағдарламалау тілдері', id: 103, isLocked: false, completedLevels: 0),
+      Category(name: 'Төртінші тарау', displayName: 'Дерекқорлар', id: 104, isLocked: false, completedLevels: 0),
+      Category(name: 'Бесінші тарау', displayName: 'Желілер мен интернет', id: 105, isLocked: false, completedLevels: 0),
+      Category(name: 'Алтыншы тарау', displayName: 'Жасанды интеллект', id: 106, isLocked: false, completedLevels: 0),
+      Category(name: 'Жалпы жаттығу', id: 109, isLocked: false, completedLevels: 0),
+      Category(name: 'Сынақ алаңы', displayName: 'Сынақ алаңы', id: 110, isLocked: false, completedLevels: 0, totalLevels: 1),
+    ];
+
+    // Load saved progress for each category
+    for (int i = 0; i < categories.length; i++) {
+      final savedCategory = await Category.loadProgress(categories[i].id);
+      if (savedCategory != null) {
+        categories[i] = savedCategory;
+      }
+    }
+
+    setState(() {
+      isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text('Информатика'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withAlpha((0.95 * 255).round()),
+        elevation: 0,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Барлық деректерді тазарту'),
+                  content: const Text('Барлық категориялардың прогресін тазалауды қалайсыз ба?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Жоқ'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _clearAllCategoryData();
+                      },
+                      child: const Text('Иә'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Theme.of(context).colorScheme.primary.withAlpha((0.7 * 255).round()),
+                          Theme.of(context).colorScheme.secondary.withAlpha((0.7 * 255).round()),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha((0.1 * 255).round()),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Жалпы прогресс',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              '${(totalProgress * 100).toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.white.withAlpha((0.2 * 255).round()),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: LinearProgressIndicator(
+                              value: totalProgress,
+                              backgroundColor: Colors.transparent,
+                              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                              minHeight: 16,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${categories.fold(0, (sum, c) => sum + c.completedLevels)}/${categories.fold(0, (sum, c) => sum + c.totalLevels)} деңгей',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withAlpha((0.9 * 255).round()),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Оқу үрдісі',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  LearningPathGrid(categories: categories),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class BiologyLearningPathPage extends StatefulWidget {
+  const BiologyLearningPathPage({super.key});
+
+  @override
+  State<BiologyLearningPathPage> createState() => _BiologyLearningPathPageState();
+}
+
+class _BiologyLearningPathPageState extends State<BiologyLearningPathPage> {
+  late List<Category> categories;
+  bool isLoading = true;
+
+  double get totalProgress {
+    if (categories.isEmpty) return 0.0;
+    double totalCompletedLevels = categories
+        .map((category) => category.completedLevels)
+        .fold(0, (sum, levels) => sum + levels);
+    
+    double totalPossibleLevels = categories
+        .map((category) => category.totalLevels)
+        .fold(0, (sum, levels) => sum + levels);
+    
+    return totalPossibleLevels > 0 ? (totalCompletedLevels / totalPossibleLevels) : 0.0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _clearAllCategoryData() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (int i = 201; i <= 210; i++) {
+      await prefs.remove('category_$i');
+    }
+    print('All Biology category data has been cleared');
+    await _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    // Initialize with default categories for Biology
+    categories = [
+      Category(name: 'Бірінші тарау (Биология)', displayName: 'Бірінші тарау', id: 201, isLocked: false, completedLevels: 0),
+      Category(name: 'Екінші тарау (Биология)', displayName: 'Екінші тарау', id: 202, isLocked: false, completedLevels: 0),
+      Category(name: 'Үшінші тарау (Биология)', displayName: 'Үшінші тарау', id: 203, isLocked: false, completedLevels: 0),
+      Category(name: 'Төртінші тарау (Биология)', displayName: 'Төртінші тарау', id: 204, isLocked: false, completedLevels: 0),
+      Category(name: 'Жалпы жаттығу (Биология)', displayName: 'Жалпы жаттығу', id: 209, isLocked: false, completedLevels: 0),
+      Category(name: 'Сынақ алаңы', displayName: 'Сынақ алаңы', id: 210, isLocked: false, completedLevels: 0, totalLevels: 1),
+    ];
+
+    // Load saved progress for each category
+    for (int i = 0; i < categories.length; i++) {
+      final savedCategory = await Category.loadProgress(categories[i].id);
+      if (savedCategory != null) {
+        categories[i] = savedCategory;
+      }
+    }
+
+    setState(() {
+      isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: const Text('Биология'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary.withAlpha((0.95 * 255).round()),
+        elevation: 0,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Барлық деректерді тазарту'),
+                  content: const Text('Барлық категориялардың прогресін тазалауды қалайсыз ба?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Жоқ'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _clearAllCategoryData();
+                      },
+                      child: const Text('Иә'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Theme.of(context).colorScheme.primary.withAlpha((0.7 * 255).round()),
+                          Theme.of(context).colorScheme.secondary.withAlpha((0.7 * 255).round()),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha((0.1 * 255).round()),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Жалпы прогресс',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              '${(totalProgress * 100).toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.white.withAlpha((0.2 * 255).round()),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: LinearProgressIndicator(
+                              value: totalProgress,
+                              backgroundColor: Colors.transparent,
+                              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                              minHeight: 16,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${categories.fold(0, (sum, c) => sum + c.completedLevels)}/${categories.fold(0, (sum, c) => sum + c.totalLevels)} деңгей',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withAlpha((0.9 * 255).round()),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Оқу үрдісі',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  LearningPathGrid(categories: categories),
+                ],
+              ),
+            ),
           ),
         ),
       ),

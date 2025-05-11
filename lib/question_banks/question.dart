@@ -5,6 +5,7 @@ class Question {
   final String text;
   final List<String> options;
   final int correctOptionIndex;
+  final String? imageAsset; // Optional image asset path
   bool wasAnsweredIncorrectly = false;
   // Add a flag to track if this question is currently being displayed
   bool isCurrentlyDisplayed = false;
@@ -18,6 +19,7 @@ class Question {
     required this.text,
     required this.options,
     required this.correctOptionIndex,
+    this.imageAsset, // Optional parameter for image references
   }) : _shuffledOptions = List<String>.from(options),
        _currentCorrectIndex = correctOptionIndex {
     // Initialize shuffled state immediately
